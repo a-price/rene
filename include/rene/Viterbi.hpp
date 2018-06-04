@@ -42,7 +42,7 @@
 #include <vector>
 #include <iostream>
 #include <limits>
-#include <assert.h>
+#include <cassert>
 
 namespace rene
 {

@@ -38,6 +38,8 @@ public:
 
 	virtual std::string getSolverFinalFrame() = 0;
 
+	virtual std::vector<std::string> getSolvedJointNames() = 0;
+
 	virtual Limits getJointLimits() = 0;
 
 	virtual SolutionContainer getSolutions(const Pose& pose) = 0;

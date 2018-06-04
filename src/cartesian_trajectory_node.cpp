@@ -17,11 +17,8 @@
 
 // TODO: Replace with moveit-loaded values
 
-//const std::vector<double> JOINT_WEIGHTS = {5.0,5.0,3.0,3.0,2.0,1.0};
-const std::vector<double> JOINT_WEIGHTS = {1.0,1.0,1.0,1.0,1.0,1.0};
-//const std::vector<double> JOINT_WEIGHTS = {1.0,1.0,1.0,5.0,1.0,5.0};
-const std::vector<double> JOINT_HOME = {0.0, -0.7024, 2.24, 3.1416, 1.5708, 0.0};
-const std::vector<rene::SingleJointLimits> LIMITS {{-3.23, 3.23}, {-2.27, 0.35}, {-1.75, 2.51}, {-6.11, 6.11}, {-2.09, 2.09}, {-6.11, 6.11}};
+std::vector<double> JOINT_WEIGHTS;
+std::vector<double> JOINT_HOME;
 
 // TODO: use cost functor rather than function
 // TODO: replace/augment with stiffness model
@@ -48,7 +45,7 @@ double transitionCost(const std::vector<double>& q1, const double t1, const std:
 	{
 		cost += fabs(q1[j] - q2[j]) * JOINT_WEIGHTS[j];
 	}
-	return cost;//*cost/(t2-t1);
+	return cost/(t2-t1);
 }
 
 
@@ -60,9 +57,9 @@ std::string tool_frame_id;
 
 void pathCallback(const nav_msgs::PathPtr& path_ptr)
 {
+	assert(ikProvider);
 
-	// TODO: move or assign instead of copy
-	std::vector<geometry_msgs::PoseStamped> poses = path_ptr->poses;
+	const std::vector<geometry_msgs::PoseStamped>& poses = path_ptr->poses;
 	const std::string path_frame = poses.front().header.frame_id;
 
 	if (poses.size() < 2)
@@ -109,11 +106,12 @@ void pathCallback(const nav_msgs::PathPtr& path_ptr)
 
 		assert(t >= 0); assert(t >= t0); assert(t <= tF);
 
-		rene::IKProvider::SolutionContainer frameSolutions = ikProvider->getSolutions(rene::Pose(solverTpath) * rene::Pose(poses[i].pose) * rene::Pose(solverOutTtool).inv());
+		rene::Pose goalPose = rene::Pose(solverTpath) * rene::Pose(poses[i].pose) * rene::Pose(solverOutTtool).inv();
+		rene::IKProvider::SolutionContainer frameSolutions = ikProvider->getSolutions(goalPose);
 
 		if (frameSolutions.empty())
 		{
-			ROS_ERROR_STREAM("Step " << i << " is unreachable.\n" << poses[i]);
+			ROS_ERROR_STREAM("Step " << i << "/" << poses.size()-1 << " is unreachable.\n" << poses[i]);
 			return;
 		}
 
@@ -148,7 +146,7 @@ void pathCallback(const nav_msgs::PathPtr& path_ptr)
 		jtpt.time_from_start = ros::Duration(t - t0);
 		bestTraj.points.push_back(jtpt);
 	}
-	for (int i = 1; i <= 6; ++i) { bestTraj.joint_names.push_back("joint_"+std::to_string(i)); }
+	bestTraj.joint_names = ikProvider->getSolvedJointNames();
 	robotTraj.joint_trajectory = bestTraj;
 	displayTraj.trajectory.push_back(robotTraj);
 
@@ -207,6 +205,12 @@ int main(int argc, char **argv)
 	{
 		ROS_ERROR_STREAM("The kinematics plugin '" << ikClassName << "' failed to load.");
 		return -1;
+	}
+
+	JOINT_WEIGHTS = std::vector<double>(ikProvider->getActiveJointDimension(), 1.0);
+	for (const auto& limits : ikProvider->getJointLimits())
+	{
+		JOINT_HOME.push_back((limits.max_position + limits.min_position)/2.0);
 	}
 
 	tl = std::make_shared<tf::TransformListener>();
