@@ -213,9 +213,9 @@ file(GLOB unit_tests_source "test/unit/*.cpp")
 list(SORT unit_tests_source)
 foreach(utest_src_file ${unit_tests_source})
   get_filename_component(test_base ${utest_src_file} NAME_WE)
-  catkin_add_gtest(${PROJECT_NAME}-${test_base} ${utest_src_file})
-  if(TARGET ${PROJECT_NAME}-${test_base})
-    target_link_libraries(${PROJECT_NAME}-${test_base}
+  catkin_add_gtest(${PROJECT_NAME}_${test_base} ${utest_src_file})
+  if(TARGET ${PROJECT_NAME}_${test_base})
+    target_link_libraries(${PROJECT_NAME}_${test_base}
       ${PROJECT_NAME}
       ${catkin_LIBRARIES}
       ${GTEST_LIBRARIES}
