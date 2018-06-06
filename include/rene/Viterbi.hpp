@@ -38,7 +38,6 @@
 #ifndef RENE_VITERBI_H
 #define RENE_VITERBI_H
 
-
 #include <vector>
 #include <iostream>
 #include <limits>
