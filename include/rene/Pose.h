@@ -24,19 +24,23 @@ struct Pose
 		:r(_r), q(_q)
 	{ }
 
+	explicit
 	Pose(const Eigen::Affine3d& _R)
 		:r(_R.translation()), q(_R.linear())
 	{ }
 
+	explicit
 	Pose(const geometry_msgs::Pose& pose)
 		:r(pose.position.x, pose.position.y, pose.position.z),
 		 q(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z)
 	{ }
 
+	explicit
 	Pose(const geometry_msgs::PoseStamped& pose)
 		:Pose(pose.pose)
 	{ }
 
+	explicit
 	Pose(const tf::Transform& pose)
 		:r(pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z()),
 		 q(pose.getRotation().w(), pose.getRotation().x(), pose.getRotation().y(), pose.getRotation().z())
@@ -67,7 +71,16 @@ struct Pose
 	{
 		return {-r, q.inverse()};
 	}
+
+//	geometry_msgs::Pose toGeometryMessage() const;
+
+	tf::Transform toTF() const
+	{
+		return tf::Transform(tf::Quaternion(q.x(), q.y(), q.z(), q.w()), tf::Vector3(r.x(), r.y(), r.z()));
+	}
 };
+
+
 
 } // namespace rene
 

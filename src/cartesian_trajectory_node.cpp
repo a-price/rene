@@ -14,6 +14,7 @@
 #include <pluginlib/class_loader.h>
 
 #include <Eigen/Geometry>
+#include <tf/transform_broadcaster.h>
 
 // TODO: Replace with moveit-loaded values
 
@@ -48,12 +49,17 @@ double transitionCost(const std::vector<double>& q1, const double t1, const std:
 	return cost/(t2-t1);
 }
 
+//#define DEBUG_TRANSFORMS
 
 ros::Publisher jointVizPub, jointPub;
 control_msgs::FollowJointTrajectoryGoalPtr traj_ptr;
 std::shared_ptr<rene::IKProvider> ikProvider;
 std::shared_ptr<tf::TransformListener> tl;
 std::string tool_frame_id;
+
+#ifdef DEBUG_TRANSFORMS
+std::shared_ptr<tf::TransformBroadcaster> tb;
+#endif
 
 void pathCallback(const nav_msgs::PathPtr& path_ptr)
 {
@@ -76,19 +82,19 @@ void pathCallback(const nav_msgs::PathPtr& path_ptr)
 	tf::StampedTransform solverTpath;
 	tl->lookupTransform(ikProvider->getSolverBaseFrame(), path_frame, ros::Time(0), solverTpath);
 
-	tf::StampedTransform solverOutTtool;
+	tf::StampedTransform toolTsolverOut;
 	if (tool_frame_id.empty())
 	{
-		solverOutTtool.setIdentity();
+		toolTsolverOut.setIdentity();
 	}
 	else
 	{
-		if (!tl->waitForTransform(ikProvider->getSolverFinalFrame(), tool_frame_id, ros::Time::now(), ros::Duration(10.0)))
+		if (!tl->waitForTransform(tool_frame_id, ikProvider->getSolverFinalFrame(), ros::Time::now(), ros::Duration(10.0)))
 		{
 			ROS_ERROR_STREAM("Failed to look up transform '" << tool_frame_id << "'->'" << ikProvider->getSolverFinalFrame() << "'.");
 			return;
 		}
-		tl->lookupTransform(ikProvider->getSolverFinalFrame(), tool_frame_id, ros::Time(0), solverOutTtool);
+		tl->lookupTransform(tool_frame_id, ikProvider->getSolverFinalFrame(), ros::Time(0), toolTsolverOut);
 	}
 
 	const double t0 = poses.front().header.stamp.toSec();
@@ -106,7 +112,18 @@ void pathCallback(const nav_msgs::PathPtr& path_ptr)
 
 		assert(t >= 0); assert(t >= t0); assert(t <= tF);
 
-		rene::Pose goalPose = rene::Pose(solverTpath) * rene::Pose(poses[i].pose) * rene::Pose(solverOutTtool).inv();
+		rene::Pose goalPose = rene::Pose(solverTpath) * rene::Pose(poses[i].pose) * rene::Pose(toolTsolverOut);
+
+#ifdef DEBUG_TRANSFORMS
+
+		tb->sendTransform(tf::StampedTransform(rene::Pose(solverTpath).toTF(), ros::Time::now(), ikProvider->getSolverBaseFrame(), path_frame + "_target"));
+		tb->sendTransform(tf::StampedTransform(rene::Pose(poses[i].pose).toTF(), ros::Time::now(), path_frame + "_target", "tool_target"));
+		tb->sendTransform(tf::StampedTransform(rene::Pose(toolTsolverOut).toTF(), ros::Time::now(), "tool_target", "solver_output_target"));
+//		tb->sendTransform(tf::StampedTransform(rene::Pose(toolTsolverOut).inv().toTF(), ros::Time::now(), ikProvider->getSolverFinalFrame(), "tool_frame_gathered"));
+		tb->sendTransform(tf::StampedTransform(goalPose.toTF(), ros::Time::now(), ikProvider->getSolverBaseFrame(), ikProvider->getSolverFinalFrame() + "_target"));
+		ros::Duration(0.1).sleep();
+#endif
+
 		rene::IKProvider::SolutionContainer frameSolutions = ikProvider->getSolutions(goalPose);
 
 		if (frameSolutions.empty())
@@ -121,10 +138,12 @@ void pathCallback(const nav_msgs::PathPtr& path_ptr)
 		std::cerr << std::endl;
 	}
 
+	// Compute a reasonable cost threshold
 	double dist = M_PI/4.0;
 	std::vector<double> fromJoints(JOINT_HOME.size(), 0.0), toJoints(JOINT_HOME.size(), dist);
 	double maxCost = transitionCost(fromJoints, times[0], toJoints, times[1]);
 	std::cerr << "Maximum transition cost is " << maxCost << std::endl;
+
 	std::vector<int> cheapestPath = rene::viterbi(trellis, times, &stateCost, &transitionCost, maxCost);
 	if (cheapestPath.size() != poses.size())
 	{
@@ -214,6 +233,9 @@ int main(int argc, char **argv)
 	}
 
 	tl = std::make_shared<tf::TransformListener>();
+#ifdef DEBUG_TRANSFORMS
+	tb = std::make_shared<tf::TransformBroadcaster>();
+#endif
 
 	private_handle.param<std::string>("tool_frame_id", tool_frame_id, "");
 
