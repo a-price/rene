@@ -8,4 +8,4 @@ Reference Frame Overview
 ------------------------
 
 
-![TF Tree](system.svg)
+![TF Tree](frames.svg)
