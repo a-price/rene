@@ -1,5 +1,5 @@
 /**
- * \file Viterbi.h
+ * \file Viterbi.hpp
  * \brief
  *
  * \author Andrew Price

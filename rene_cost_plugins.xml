@@ -1,0 +1,5 @@
+<library path="lib/librene">
+    <class type="rene::JointHomeCostProvider" base_class_type="rene::StateCostProvider">
+        <description>This provides a simple cost functor where the state cost is the weighted distance from some home configuration.</description>
+    </class>
+</library>

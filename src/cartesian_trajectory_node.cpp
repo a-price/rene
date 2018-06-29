@@ -1,4 +1,5 @@
 #include "rene/IKProvider.h"
+#include "rene/StateCostProvider.h"
 #include "rene/Viterbi.hpp"
 
 #include <nav_msgs/Path.h>
@@ -15,24 +16,41 @@
 
 #include <Eigen/Geometry>
 #include <tf/transform_broadcaster.h>
+#include <rene/JointHomeCostProvider.h>
 
 // TODO: Replace with moveit-loaded values
 
 std::vector<double> JOINT_WEIGHTS;
 std::vector<double> JOINT_HOME;
 
-// TODO: use cost functor rather than function
-// TODO: replace/augment with stiffness model
-double stateCost(const std::vector<double>& q)
+template <typename T>
+void debugClassLoader(pluginlib::ClassLoader<T>& loader, const std::string& subclassName)
 {
-	assert(JOINT_WEIGHTS.size() == q.size());
-	double cost = 0;
-	for (size_t j = 0; j < q.size(); ++j)
+	loader.refreshDeclaredClasses();
+	std::cerr << "Declared Plugin XML files:" << std::endl;
+	for (const auto& c : loader.getPluginXmlPaths()) { std::cerr << "\t" << c << std::endl; }
+	std::cerr << "Declared Classes:" << std::endl;
+	for (const auto& c : loader.getDeclaredClasses()) { std::cerr << "\t" << c << std::endl; }
+	std::cerr << "Registered Libraries:" << std::endl;
+	for (const auto& c : loader.getRegisteredLibraries()) { std::cerr << "\t"  << c << std::endl; }
+	std::cerr << "Available? " << loader.isClassAvailable(subclassName) << std::endl;
+	std::cerr << "Loaded? " << loader.isClassLoaded(subclassName) << std::endl;
+	std::cerr << "Class package: '" << loader.getClassPackage(subclassName) << "'" << std::endl;
+	std::cerr << "Class manifest path: '" << loader.getPluginManifestPath(subclassName) << "'" << std::endl;
+	std::cerr << "Class library path: '" << loader.getClassLibraryPath(subclassName) << "'" << std::endl;
+	std::cerr << "Class type: '" << loader.getClassType(subclassName) << "'" << std::endl;
+	std::cerr << "Class description: '" << loader.getClassDescription(subclassName) << "'" << std::endl;
+	std::cerr << "Class name: '" << loader.getName(subclassName) << "'" << std::endl;
+	try
 	{
-		cost += fabs(q[j]-JOINT_HOME[j])*JOINT_WEIGHTS[j]/100.0;
+		loader.loadLibraryForClass(subclassName);
+		std::cerr << "Loaded? " << loader.isClassLoaded(subclassName) << std::endl;
 	}
-	return cost;
-//	return 0;
+	catch (pluginlib::LibraryLoadException& ex)
+	{
+		std::cerr << ex.what() << std::endl;
+		std::cerr << "Loaded (Exception)? " << loader.isClassLoaded(subclassName) << std::endl;
+	}
 }
 
 
@@ -54,6 +72,7 @@ double transitionCost(const std::vector<double>& q1, const double t1, const std:
 ros::Publisher jointVizPub, jointPub;
 control_msgs::FollowJointTrajectoryGoalPtr traj_ptr;
 std::shared_ptr<rene::IKProvider> ikProvider;
+std::shared_ptr<rene::StateCostProvider> stateCostProvider;
 std::shared_ptr<tf::TransformListener> tl;
 std::string tool_frame_id;
 
@@ -144,7 +163,8 @@ void pathCallback(const nav_msgs::PathPtr& path_ptr)
 	double maxCost = transitionCost(fromJoints, times[0], toJoints, times[1]);
 	std::cerr << "Maximum transition cost is " << maxCost << std::endl;
 
-	std::vector<int> cheapestPath = rene::viterbi(trellis, times, &stateCost, &transitionCost, maxCost);
+	const auto stateCostFn = [&](const std::vector<double>& q){ return stateCostProvider->operator()(q); };
+	std::vector<int> cheapestPath = rene::viterbi(trellis, times, stateCostFn, &transitionCost, maxCost);
 	if (cheapestPath.size() != poses.size())
 	{
 		ROS_ERROR_STREAM("Unable to compute Cartesian trajectory");
@@ -218,6 +238,7 @@ int main(int argc, char **argv)
 	catch (pluginlib::PluginlibException& ex)
 	{
 		ROS_ERROR_STREAM("The kinematics plugin '" << ikClassName << "' failed to load. Error: " << ex.what());
+		debugClassLoader(ikLoader, ikClassName);
 		return -1;
 	}
 	if (!ikProvider)
@@ -226,7 +247,29 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	JOINT_WEIGHTS = std::vector<double>(ikProvider->getActiveJointDimension(), 1.0);
+	std::string stateCostClassName;
+	private_handle.param<std::string>("state_cost_provider", stateCostClassName, "rene::JointHomeCostProvider");
+
+	pluginlib::ClassLoader<rene::StateCostProvider> stateCostLoader("rene", "rene::StateCostProvider");
+	try
+	{
+		stateCostProvider = std::shared_ptr<rene::StateCostProvider>(stateCostLoader.createUnmanagedInstance(stateCostClassName));
+	}
+	catch (pluginlib::PluginlibException& ex)
+	{
+		ROS_ERROR_STREAM("The cost plugin '" << stateCostClassName << "' failed to load. Error: " << ex.what());
+		debugClassLoader(stateCostLoader, stateCostClassName);
+		return -1;
+	}
+	if (!stateCostProvider)
+	{
+		ROS_ERROR_STREAM("The cost plugin '" << stateCostClassName << "' failed to load.");
+		return -1;
+	}
+
+	stateCostProvider->configure(ikProvider.get());
+
+	JOINT_WEIGHTS = std::vector<double>(static_cast<unsigned>(ikProvider->getActiveJointDimension()), 1.0);
 	for (const auto& limits : ikProvider->getJointLimits())
 	{
 		JOINT_HOME.push_back((limits.max_position + limits.min_position)/2.0);
