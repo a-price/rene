@@ -248,7 +248,7 @@ int main(int argc, char **argv)
 	}
 
 	std::string stateCostClassName;
-	private_handle.param<std::string>("state_cost_provider", stateCostClassName, "rene::JointHomeCostProvider");
+	private_handle.param<std::string>("state_cost_provider", stateCostClassName, "rene/JointHomeCostProvider");
 
 	pluginlib::ClassLoader<rene::StateCostProvider> stateCostLoader("rene", "rene::StateCostProvider");
 	try

@@ -22,6 +22,11 @@ for (size_t j = 0; j<solutions.GetNumSolutions(); ++j) \
 	for (size_t joint_idx = 0; joint_idx<solnJoints.size(); ++joint_idx) \
 	{ \
 		assert(limits[joint_idx].min_position <= limits[joint_idx].max_position); \
+		if (!std::isfinite(solnJoints[joint_idx])) \
+		{ \
+			isValidSolution = false; \
+			break; \
+		}\
 \
 		while (solnJoints[joint_idx]<limits[joint_idx].min_position) \
 		{ \
